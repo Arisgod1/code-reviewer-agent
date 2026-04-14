@@ -1,0 +1,10 @@
+diff --git a/main.go b/main.go
+index 1111111..2222222 100644
+--- a/main.go
++++ b/main.go
+@@ -10,6 +10,8 @@ func query(user string) string {
+-   sql := "select * from users where name = '" + user + "'"
++   sql := "select * from users where name = '" + user + "'"
++   fmt.Println("debug user:", user)
+    return sql
+}
