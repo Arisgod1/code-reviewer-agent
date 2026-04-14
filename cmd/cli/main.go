@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Arisgod1/code-reviewer-agent/internal/tools"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +24,19 @@ func main() {
 			fmt.Println("diff path:", diffPath)
 			fmt.Println("language :", language)
 			fmt.Println("next step: parse diff -> scan rules -> format report")
+			parsed, err := tools.ParseDiffFile(diffPath)
+			if err != nil {
+				return err
+			}
+			fmt.Println("parsed files:", parsed.Files)
+			fmt.Println("changed lines:", len(parsed.Lines))
+
+			for i, l := range parsed.Lines {
+				if i >= 5 {
+					break
+				}
+				fmt.Printf("line[%d] file=%s:%d content=%s\n", i, l.File, l.Line, l.Content)
+			}
 			return nil
 		},
 	}
