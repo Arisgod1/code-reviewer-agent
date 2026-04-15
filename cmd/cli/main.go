@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Arisgod1/code-reviewer-agent/internal/report"
 	"github.com/Arisgod1/code-reviewer-agent/internal/tools"
 	"github.com/spf13/cobra"
 )
@@ -11,6 +12,7 @@ import (
 var diffPath string
 var language string
 var outputPath string
+var mdOutputPath string
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -43,11 +45,15 @@ func main() {
 			for i, f := range findings {
 				fmt.Printf("[%d] %s %s:%d severity=%s\n", i, f.ID, f.File, f.Line, f.Severity)
 			}
-			report := tools.BuildReport(findings)
-			if err := tools.WriteReportJSON(report, outputPath); err != nil {
+			reviewReport := tools.BuildReport(findings)
+			if err := tools.WriteReportJSON(reviewReport, outputPath); err != nil {
 				return err
 			}
 			fmt.Println("report written to:", outputPath)
+			if err := report.WriteMarkdownReport(reviewReport, mdOutputPath); err != nil {
+				return err
+			}
+			fmt.Println("markdown report written to:", mdOutputPath)
 			return nil
 		},
 	}
@@ -55,6 +61,7 @@ func main() {
 	rootCmd.Flags().StringVar(&diffPath, "diff", "", "path to patch/diff file")
 	rootCmd.Flags().StringVar(&language, "lang", "go", "language: go/java")
 	rootCmd.Flags().StringVar(&outputPath, "out", "report.json", "output json report path")
+	rootCmd.Flags().StringVar(&mdOutputPath, "mdout", "report.md", "output markdown report path")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println("error:", err)

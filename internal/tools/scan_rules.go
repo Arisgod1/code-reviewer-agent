@@ -45,6 +45,26 @@ func ScanRiskRules(parsed ParseDiffResult, language string) []types.Finding {
 				Suggestion: "Avoid logging sensitive fields; mask or remove them.",
 			})
 		}
+		// 规则3：硬编码密钥（MVP 启发式）
+		// 命中关键词 + 赋值 + 引号，减少一点误报
+		if (strings.Contains(c, "apikey") ||
+			strings.Contains(c, "api_key") ||
+			strings.Contains(c, "secret") ||
+			strings.Contains(c, "password") ||
+			strings.Contains(c, "token")) &&
+			strings.Contains(c, "=") &&
+			(strings.Contains(c, "\"") || strings.Contains(c, "'")) {
+			findings = append(findings, types.Finding{
+				ID:         "HARDCODED_SECRET",
+				File:       l.File,
+				Line:       l.Line,
+				Rule:       "Possible hardcoded secret",
+				Severity:   "high",
+				Confidence: 0.80,
+				Evidence:   []string{l.Content},
+				Suggestion: "Move secrets to environment variables or secret manager.",
+			})
+		}
 	}
 
 	return findings
