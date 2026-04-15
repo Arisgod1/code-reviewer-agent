@@ -10,6 +10,7 @@ import (
 
 var diffPath string
 var language string
+var outputPath string
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -42,12 +43,18 @@ func main() {
 			for i, f := range findings {
 				fmt.Printf("[%d] %s %s:%d severity=%s\n", i, f.ID, f.File, f.Line, f.Severity)
 			}
+			report := tools.BuildReport(findings)
+			if err := tools.WriteReportJSON(report, outputPath); err != nil {
+				return err
+			}
+			fmt.Println("report written to:", outputPath)
 			return nil
 		},
 	}
 
 	rootCmd.Flags().StringVar(&diffPath, "diff", "", "path to patch/diff file")
 	rootCmd.Flags().StringVar(&language, "lang", "go", "language: go/java")
+	rootCmd.Flags().StringVar(&outputPath, "out", "report.json", "output json report path")
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println("error:", err)
