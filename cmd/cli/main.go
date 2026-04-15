@@ -37,6 +37,11 @@ func main() {
 				}
 				fmt.Printf("line[%d] file=%s:%d content=%s\n", i, l.File, l.Line, l.Content)
 			}
+			findings := tools.ScanRiskRules(parsed, language)
+			fmt.Println("findings:", len(findings))
+			for i, f := range findings {
+				fmt.Printf("[%d] %s %s:%d severity=%s\n", i, f.ID, f.File, f.Line, f.Severity)
+			}
 			return nil
 		},
 	}
