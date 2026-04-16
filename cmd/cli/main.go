@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Arisgod1/code-reviewer-agent/internal/report"
 	"github.com/Arisgod1/code-reviewer-agent/internal/tools"
+	"github.com/Arisgod1/code-reviewer-agent/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -22,15 +24,38 @@ func main() {
 			if diffPath == "" {
 				return fmt.Errorf("please provide --diff path, e.g. review --diff testdata/sample.patch")
 			}
-
+			startAll := time.Now()
+			trace := make([]types.TraceStep, 0)
+			step := 1
+			addTrace := func(thought, action, observation string) {
+				trace = append(trace, types.TraceStep{
+					Step:        step,
+					Thought:     thought,
+					Action:      action,
+					Observation: observation,
+					Timestamp:   time.Now().Format(time.RFC3339),
+				})
+				step++
+			}
 			fmt.Println("== CodeReviewer-Agent ==")
 			fmt.Println("diff path:", diffPath)
 			fmt.Println("language :", language)
+			addTrace(
+				"Need in ingest user input",
+				"read CLI flags",
+				"diff="+diffPath+",lang="+language,
+			)
+
 			fmt.Println("next step: parse diff -> scan rules -> format report")
 			parsed, err := tools.ParseDiffFile(diffPath)
 			if err != nil {
 				return err
 			}
+			addTrace(
+				"Need changed files and lines",
+				"call tool:parse_diff",
+				fmt.Sprintf("files=%d, changed_lines=%d", len(parsed.Files), len(parsed.Lines)),
+			)
 			fmt.Println("parsed files:", parsed.Files)
 			fmt.Println("changed lines:", len(parsed.Lines))
 
@@ -42,10 +67,23 @@ func main() {
 			}
 			findings := tools.ScanRiskRules(parsed, language)
 			fmt.Println("findings:", len(findings))
+			addTrace(
+				"Need risk findings from changed lines",
+				"call tool: scan_risk_rules",
+				fmt.Sprintf("findings=%d", len(findings)),
+			)
 			for i, f := range findings {
 				fmt.Printf("[%d] %s %s:%d severity=%s\n", i, f.ID, f.File, f.Line, f.Severity)
 			}
+			addTrace(
+				"Need final structured outputs",
+				"call tool: format_report",
+				"json="+outputPath+", markdown="+mdOutputPath,
+			)
 			reviewReport := tools.BuildReport(findings)
+			reviewReport.Trace = trace
+			reviewReport.Metrics["total_cost_ms"] = time.Since(startAll).Milliseconds()
+			reviewReport.Metrics["trace_steps"] = len(trace)
 			if err := tools.WriteReportJSON(reviewReport, outputPath); err != nil {
 				return err
 			}
