@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -45,9 +46,13 @@ func main() {
 				})
 				step++
 			}
-			recordToolCall := func(name string, fn func() (map[string]any, error)) (map[string]any, error) {
+			recordToolCall := func(name string, timeout time.Duration, fn func(context.Context) (map[string]any, error)) (map[string]any, error) {
 				start := time.Now()
-				out, err := fn()
+
+				toolCtx, cancel := context.WithTimeout(ctx, timeout)
+				defer cancel()
+
+				out, err := fn(toolCtx)
 				cost := time.Since(start).Milliseconds()
 
 				tc := types.ToolCall{
@@ -80,8 +85,8 @@ func main() {
 			if err != nil {
 				return err
 			}
-			parseOut, err := recordToolCall("parse_diff", func() (map[string]any, error) {
-				return parseTool.Run(ctx, map[string]any{
+			parseOut, err := recordToolCall("parse_diff", 2*time.Second, func(toolCtx context.Context) (map[string]any, error) {
+				return parseTool.Run(toolCtx, map[string]any{
 					"diff_path": diffPath,
 				})
 			})
@@ -117,8 +122,8 @@ func main() {
 			if err != nil {
 				return err
 			}
-			scanOut, err := recordToolCall("scan_risk_rules", func() (map[string]any, error) {
-				return scanTool.Run(ctx, map[string]any{
+			scanOut, err := recordToolCall("scan_risk_rules", 2*time.Second, func(toolCtx context.Context) (map[string]any, error) {
+				return scanTool.Run(toolCtx, map[string]any{
 					"lines":    parsed.Lines,
 					"language": language,
 				})
@@ -149,6 +154,7 @@ func main() {
 			reviewReport.Trace = trace
 			reviewReport.Metrics["total_costƒ_ms"] = time.Since(startAll).Milliseconds()
 			reviewReport.Metrics["trace_steps"] = len(trace)
+			reviewReport.Metrics["tool_timeout_ms"] = 2000
 			if err := tools.WriteReportJSON(reviewReport, outputPath); err != nil {
 				return err
 			}
