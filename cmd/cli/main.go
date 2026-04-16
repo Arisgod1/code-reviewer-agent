@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/Arisgod1/code-reviewer-agent/internal/agent"
 	"github.com/Arisgod1/code-reviewer-agent/internal/report"
 	"github.com/Arisgod1/code-reviewer-agent/internal/tools"
-	"github.com/Arisgod1/code-reviewer-agent/internal/types"
 	"github.com/spf13/cobra"
 )
 
@@ -33,123 +32,25 @@ func main() {
 			reg.Register(&tools.ScanRulesTool{})
 
 			startAll := time.Now()
-			toolCalls := make([]types.ToolCall, 0)
-			trace := make([]types.TraceStep, 0)
-			step := 1
-			addTrace := func(thought, action, observation string) {
-				trace = append(trace, types.TraceStep{
-					Step:        step,
-					Thought:     thought,
-					Action:      action,
-					Observation: observation,
-					Timestamp:   time.Now().Format(time.RFC3339),
-				})
-				step++
-			}
-			recordToolCall := func(name string, timeout time.Duration, fn func(context.Context) (map[string]any, error)) (map[string]any, error) {
-				start := time.Now()
-
-				toolCtx, cancel := context.WithTimeout(ctx, timeout)
-				defer cancel()
-
-				out, err := fn(toolCtx)
-				cost := time.Since(start).Milliseconds()
-
-				tc := types.ToolCall{
-					Name:    name,
-					CostMs:  cost,
-					Success: err == nil,
-				}
-
-				if err != nil {
-					tc.Output = "error: " + err.Error()
-				} else {
-					tc.Output = "ok"
-				}
-
-				toolCalls = append(toolCalls, tc)
-				return out, err
-			}
 			fmt.Println("== CodeReviewer-Agent ==")
 			fmt.Println("diff path:", diffPath)
 			fmt.Println("language :", language)
-			addTrace(
-				"Need in ingest user input",
-				"read CLI flags",
-				"diff="+diffPath+",lang="+language,
-			)
 
 			fmt.Println("next step: parse diff -> scan rules -> format report")
 
-			parseTool, err := reg.Get("parse_diff")
-			if err != nil {
-				return err
-			}
-			parseOut, err := recordToolCall("parse_diff", 2*time.Second, func(toolCtx context.Context) (map[string]any, error) {
-				return parseTool.Run(toolCtx, map[string]any{
-					"diff_path": diffPath,
-				})
-			})
+			loopRes, err := agent.RunReviewLoop(ctx, reg, diffPath, language, 4)
 			if err != nil {
 				return err
 			}
 
-			files, _ := parseOut["files"].([]string)
-			lines, ok := parseOut["lines"].([]tools.ChangedLine)
-			if !ok {
-				return fmt.Errorf("parse_diff output lines type invalid")
-			}
+			findings := loopRes.Findings
+			trace := loopRes.Trace
+			toolCalls := loopRes.ToolCalls
 
-			parsed := tools.ParseDiffResult{
-				Files: files,
-				Lines: lines,
-			}
-			addTrace(
-				"Need changed files and lines",
-				"call tool:parse_diff",
-				fmt.Sprintf("files=%d, changed_lines=%d", len(parsed.Files), len(parsed.Lines)),
-			)
-			fmt.Println("parsed files:", parsed.Files)
-			fmt.Println("changed lines:", len(parsed.Lines))
-
-			for i, l := range parsed.Lines {
-				if i >= 5 {
-					break
-				}
-				fmt.Printf("line[%d] file=%s:%d content=%s\n", i, l.File, l.Line, l.Content)
-			}
-			scanTool, err := reg.Get("scan_risk_rules")
-			if err != nil {
-				return err
-			}
-			scanOut, err := recordToolCall("scan_risk_rules", 2*time.Second, func(toolCtx context.Context) (map[string]any, error) {
-				return scanTool.Run(toolCtx, map[string]any{
-					"lines":    parsed.Lines,
-					"language": language,
-				})
-			})
-			if err != nil {
-				return err
-			}
-
-			findings, ok := scanOut["findings"].([]types.Finding)
-			if !ok {
-				return fmt.Errorf("scan_risk_rules output findings type invalid")
-			}
-			addTrace(
-				"Need risk findings from changed lines",
-				"call tool: scan_risk_rules",
-				fmt.Sprintf("findings=%d", len(findings)),
-			)
 			fmt.Println("findings:", len(findings))
 			for i, f := range findings {
 				fmt.Printf("[%d] %s %s:%d severity=%s\n", i, f.ID, f.File, f.Line, f.Severity)
 			}
-			addTrace(
-				"Need final structured outputs",
-				"call tool: format_report",
-				"json="+outputPath+", markdown="+mdOutputPath,
-			)
 			reviewReport := tools.BuildReport(findings)
 			reviewReport.Trace = trace
 			reviewReport.Metrics["total_costƒ_ms"] = time.Since(startAll).Milliseconds()
