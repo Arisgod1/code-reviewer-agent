@@ -24,6 +24,13 @@ func main() {
 			if diffPath == "" {
 				return fmt.Errorf("please provide --diff path, e.g. review --diff testdata/sample.patch")
 			}
+			//添加上下文
+			ctx := cmd.Context()
+
+			reg := tools.NewRegistry()
+			reg.Register(&tools.ParseDiffTool{})
+			reg.Register(&tools.ScanRulesTool{})
+
 			startAll := time.Now()
 			trace := make([]types.TraceStep, 0)
 			step := 1
@@ -47,9 +54,27 @@ func main() {
 			)
 
 			fmt.Println("next step: parse diff -> scan rules -> format report")
-			parsed, err := tools.ParseDiffFile(diffPath)
+
+			parseTool, err := reg.Get("parse_diff")
 			if err != nil {
 				return err
+			}
+			parseOut, err := parseTool.Run(ctx, map[string]any{
+				"diff_path": diffPath,
+			})
+			if err != nil {
+				return err
+			}
+
+			files, _ := parseOut["files"].([]string)
+			lines, ok := parseOut["lines"].([]tools.ChangedLine)
+			if !ok {
+				return fmt.Errorf("parse_diff output lines type invalid")
+			}
+
+			parsed := tools.ParseDiffResult{
+				Files: files,
+				Lines: lines,
 			}
 			addTrace(
 				"Need changed files and lines",
@@ -65,13 +90,28 @@ func main() {
 				}
 				fmt.Printf("line[%d] file=%s:%d content=%s\n", i, l.File, l.Line, l.Content)
 			}
-			findings := tools.ScanRiskRules(parsed, language)
-			fmt.Println("findings:", len(findings))
+			scanTool, err := reg.Get("scan_risk_rules")
+			if err != nil {
+				return err
+			}
+			scanOut, err := scanTool.Run(ctx, map[string]any{
+				"lines":    parsed.Lines,
+				"language": language,
+			})
+			if err != nil {
+				return err
+			}
+
+			findings, ok := scanOut["findings"].([]types.Finding)
+			if !ok {
+				return fmt.Errorf("scan_risk_rules output findings type invalid")
+			}
 			addTrace(
 				"Need risk findings from changed lines",
 				"call tool: scan_risk_rules",
 				fmt.Sprintf("findings=%d", len(findings)),
 			)
+			fmt.Println("findings:", len(findings))
 			for i, f := range findings {
 				fmt.Printf("[%d] %s %s:%d severity=%s\n", i, f.ID, f.File, f.Line, f.Severity)
 			}
@@ -82,7 +122,7 @@ func main() {
 			)
 			reviewReport := tools.BuildReport(findings)
 			reviewReport.Trace = trace
-			reviewReport.Metrics["total_cost_ms"] = time.Since(startAll).Milliseconds()
+			reviewReport.Metrics["total_costƒ_ms"] = time.Since(startAll).Milliseconds()
 			reviewReport.Metrics["trace_steps"] = len(trace)
 			if err := tools.WriteReportJSON(reviewReport, outputPath); err != nil {
 				return err
