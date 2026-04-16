@@ -32,6 +32,7 @@ func main() {
 			reg.Register(&tools.ScanRulesTool{})
 
 			startAll := time.Now()
+			toolCalls := make([]types.ToolCall, 0)
 			trace := make([]types.TraceStep, 0)
 			step := 1
 			addTrace := func(thought, action, observation string) {
@@ -43,6 +44,26 @@ func main() {
 					Timestamp:   time.Now().Format(time.RFC3339),
 				})
 				step++
+			}
+			recordToolCall := func(name string, fn func() (map[string]any, error)) (map[string]any, error) {
+				start := time.Now()
+				out, err := fn()
+				cost := time.Since(start).Milliseconds()
+
+				tc := types.ToolCall{
+					Name:    name,
+					CostMs:  cost,
+					Success: err == nil,
+				}
+
+				if err != nil {
+					tc.Output = "error: " + err.Error()
+				} else {
+					tc.Output = "ok"
+				}
+
+				toolCalls = append(toolCalls, tc)
+				return out, err
 			}
 			fmt.Println("== CodeReviewer-Agent ==")
 			fmt.Println("diff path:", diffPath)
@@ -59,8 +80,10 @@ func main() {
 			if err != nil {
 				return err
 			}
-			parseOut, err := parseTool.Run(ctx, map[string]any{
-				"diff_path": diffPath,
+			parseOut, err := recordToolCall("parse_diff", func() (map[string]any, error) {
+				return parseTool.Run(ctx, map[string]any{
+					"diff_path": diffPath,
+				})
 			})
 			if err != nil {
 				return err
@@ -94,9 +117,11 @@ func main() {
 			if err != nil {
 				return err
 			}
-			scanOut, err := scanTool.Run(ctx, map[string]any{
-				"lines":    parsed.Lines,
-				"language": language,
+			scanOut, err := recordToolCall("scan_risk_rules", func() (map[string]any, error) {
+				return scanTool.Run(ctx, map[string]any{
+					"lines":    parsed.Lines,
+					"language": language,
+				})
 			})
 			if err != nil {
 				return err
@@ -132,6 +157,10 @@ func main() {
 				return err
 			}
 			fmt.Println("markdown report written to:", mdOutputPath)
+			fmt.Println("tool calls:")
+			for _, tc := range toolCalls {
+				fmt.Printf("- %s cost=%dms success=%v\n", tc.Name, tc.CostMs, tc.Success)
+			}
 			return nil
 		},
 	}
