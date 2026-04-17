@@ -12,3 +12,9 @@ type State struct {
 	MaxSteps  int
 	Done      bool
 }
+type Plan struct {
+	Thought   string
+	ToolName  string
+	ToolInput map[string]any
+	Finish    bool
+}

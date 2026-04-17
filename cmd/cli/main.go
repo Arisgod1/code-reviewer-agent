@@ -53,7 +53,7 @@ func main() {
 			}
 			reviewReport := tools.BuildReport(findings)
 			reviewReport.Trace = trace
-			reviewReport.Metrics["total_costƒ_ms"] = time.Since(startAll).Milliseconds()
+			reviewReport.Metrics["total_cost_ms"] = time.Since(startAll).Milliseconds()
 			reviewReport.Metrics["trace_steps"] = len(trace)
 			reviewReport.Metrics["tool_timeout_ms"] = 2000
 			if err := tools.WriteReportJSON(reviewReport, outputPath); err != nil {

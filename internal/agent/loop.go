@@ -81,21 +81,23 @@ func RunReviewLoop(
 		return out, nil
 	}
 	for !state.Done && state.StepCount < state.MaxSteps {
-		action := NextAction(state)
+		plan := NextPlan(state)
+
 		state.StepCount++
 
-		switch action {
-		case "parse_diff":
-			out, err := callTool(
-				"parse_diff",
-				2*time.Second,
-				map[string]any{"diff_path": state.DiffPath},
-				"Need changed files and lines",
-			)
-			if err != nil {
-				return LoopResult{}, err
-			}
+		if plan.Finish {
+			state.Done = true
+			addTrace(plan.Thought, "finish", "loop completed")
+			break
+		}
 
+		out, err := callTool(plan.ToolName, 2*time.Second, plan.ToolInput, plan.Thought)
+		if err != nil {
+			return LoopResult{}, err
+		}
+
+		switch plan.ToolName {
+		case "parse_diff":
 			files, _ := out["files"].([]string)
 			lines, ok := out["lines"].([]tools.ChangedLine)
 			if !ok {
@@ -105,31 +107,12 @@ func RunReviewLoop(
 			state.ParsedFiles = files
 			state.ParsedLines = lines
 
-			// 这里补一条更有信息量的 trace（覆盖上面 callTool 的 'ok'）
 			addTrace(
 				"Summarize parse_diff result",
 				"parse_diff summary",
 				fmt.Sprintf("files=%d, changed_lines=%d", len(files), len(lines)),
 			)
 		case "scan_risk_rules":
-			lines, ok := state.ParsedLines.([]tools.ChangedLine)
-			if !ok {
-				return LoopResult{}, fmt.Errorf("state ParsedLines type invalid")
-			}
-
-			out, err := callTool(
-				"scan_risk_rules",
-				2*time.Second,
-				map[string]any{
-					"lines":    lines,
-					"language": state.Language,
-				},
-				"Need risk findings from changed lines",
-			)
-			if err != nil {
-				return LoopResult{}, err
-			}
-
 			findings, ok := out["findings"].([]types.Finding)
 			if !ok {
 				return LoopResult{}, fmt.Errorf("scan_risk_rules output findings type invalid")
@@ -141,12 +124,8 @@ func RunReviewLoop(
 				"scan_risk_rules summary",
 				fmt.Sprintf("findings=%d", len(findings)),
 			)
-		case "finish":
-			state.Done = true
-			addTrace("Enough evidence collected", "finish", "loop completed")
-
 		default:
-			return LoopResult{}, fmt.Errorf("unknown action: %s", action)
+			return LoopResult{}, fmt.Errorf("unknown tool in plan: %s", plan.ToolName)
 		}
 	}
 
