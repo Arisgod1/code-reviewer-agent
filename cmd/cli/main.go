@@ -3,9 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Arisgod1/code-reviewer-agent/internal/agent"
+	"github.com/Arisgod1/code-reviewer-agent/internal/config"
+	"github.com/Arisgod1/code-reviewer-agent/internal/llm"
 	"github.com/Arisgod1/code-reviewer-agent/internal/report"
 	"github.com/Arisgod1/code-reviewer-agent/internal/tools"
 	"github.com/spf13/cobra"
@@ -15,6 +18,7 @@ var diffPath string
 var language string
 var outputPath string
 var mdOutputPath string
+var useLLMPlanner bool
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -26,6 +30,30 @@ func main() {
 			}
 			//添加上下文
 			ctx := cmd.Context()
+			appCfg := config.Load()
+			var llmPlanner *agent.LLMPlanner
+			if useLLMPlanner {
+				client := llm.NewClient(llm.Config{
+					BaseURL: appCfg.LLM.BaseURL,
+					APIKey:  appCfg.LLM.APIKey,
+					Model:   appCfg.LLM.Model,
+					Timeout: appCfg.LLM.Timeout,
+					Retries: appCfg.LLM.Retries,
+				})
+				llmPlanner = &agent.LLMPlanner{Client: client}
+
+				keyPresent := "no"
+				if appCfg.LLM.APIKey != "" {
+					keyPresent = "yes"
+				}
+
+				fmt.Println("planner  : LLM enabled")
+				fmt.Println("llm base :", appCfg.LLM.BaseURL)
+				fmt.Println("llm model:", appCfg.LLM.Model)
+				fmt.Println("llm key? :", keyPresent)
+			} else {
+				fmt.Println("planner  : rule-based")
+			}
 
 			reg := tools.NewRegistry()
 			reg.Register(&tools.ParseDiffTool{})
@@ -39,7 +67,7 @@ func main() {
 
 			fmt.Println("next step: parse diff -> scan rules -> format report")
 
-			loopRes, err := agent.RunReviewLoop(ctx, reg, diffPath, language, 6)
+			loopRes, err := agent.RunReviewLoop(ctx, reg, diffPath, language, 6, llmPlanner)
 			if err != nil {
 				return err
 			}
@@ -48,10 +76,29 @@ func main() {
 			trace := loopRes.Trace
 			toolCalls := loopRes.ToolCalls
 			findings := reviewReport.Findings
+			plannerUsedLLM := false
+			plannerFallbackReasons := make([]string, 0)
+			for _, step := range trace {
+				if step.Action == "plan" && step.Observation != "" {
+					if strings.Contains(step.Observation, "source=llm") {
+						plannerUsedLLM = true
+					}
+					if strings.Contains(step.Observation, "source=fallback") {
+						plannerFallbackReasons = append(plannerFallbackReasons, step.Observation)
+					}
+				}
+			}
 
 			fmt.Println("findings:", len(findings))
 			for i, f := range findings {
 				fmt.Printf("[%d] %s %s:%d severity=%s\n", i, f.ID, f.File, f.Line, f.Severity)
+			}
+			fmt.Println("planner used llm:", plannerUsedLLM)
+			if len(plannerFallbackReasons) > 0 {
+				fmt.Println("planner fallback observations:")
+				for _, obs := range plannerFallbackReasons {
+					fmt.Println("-", obs)
+				}
 			}
 			reviewReport.Trace = trace
 			reviewReport.Metrics["total_cost_ms"] = time.Since(startAll).Milliseconds()
@@ -77,6 +124,7 @@ func main() {
 
 	rootCmd.Flags().StringVar(&diffPath, "diff", "", "path to patch/diff file")
 	rootCmd.Flags().StringVar(&language, "lang", "go", "language: go/java")
+	rootCmd.Flags().BoolVar(&useLLMPlanner, "use-llm-planner", false, "enable LLM-based planning")
 	rootCmd.Flags().StringVar(&outputPath, "out", "report.json", "output json report path")
 	rootCmd.Flags().StringVar(&mdOutputPath, "mdout", "report.md", "output markdown report path")
 

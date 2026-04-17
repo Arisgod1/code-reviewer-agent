@@ -9,6 +9,13 @@ import (
 	"github.com/Arisgod1/code-reviewer-agent/internal/types"
 )
 
+func limitText(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
 type LoopResult struct {
 	Report    types.ReviewReport
 	Trace     []types.TraceStep
@@ -21,6 +28,7 @@ func RunReviewLoop(
 	diffPath string,
 	language string,
 	maxSteps int,
+	llmPlanner *LLMPlanner,
 ) (LoopResult, error) {
 	state := &State{
 		DiffPath: diffPath,
@@ -81,8 +89,16 @@ func RunReviewLoop(
 		return out, nil
 	}
 	for !state.Done && state.StepCount < state.MaxSteps {
-		plan := NextPlan(state)
-
+		plan, plannerSource, plannerReason := NextPlanWithFallback(ctx, state, llmPlanner)
+		observation := fmt.Sprintf("source=%s tool=%s finish=%v", plannerSource, plan.ToolName, plan.Finish)
+		if plannerSource != "llm" && plannerReason != "" {
+			observation += " reason=" + limitText(plannerReason, 180)
+		}
+		addTrace(
+			"Planner selected next step",
+			"plan",
+			observation,
+		)
 		state.StepCount++
 
 		if plan.Finish {
@@ -98,32 +114,30 @@ func RunReviewLoop(
 
 		switch plan.ToolName {
 		case "parse_diff":
-			files, _ := out["files"].([]string)
-			lines, ok := out["lines"].([]tools.ChangedLine)
-			if !ok {
-				return LoopResult{}, fmt.Errorf("parse_diff output lines type invalid")
+			decoded, err := tools.DecodeParseDiffOutput(out)
+			if err != nil {
+				return LoopResult{}, err
 			}
-
-			state.ParsedFiles = files
-			state.ParsedLines = lines
+			state.ParsedFiles = decoded.Files
+			state.ParsedLines = decoded.Lines
 
 			addTrace(
 				"Summarize parse_diff result",
 				"parse_diff summary",
-				fmt.Sprintf("files=%d, changed_lines=%d", len(files), len(lines)),
+				fmt.Sprintf("files=%d, changed_lines=%d", len(state.ParsedFiles), len(state.ParsedLines)),
 			)
 			state.HasParsedDiff = true
 		case "scan_risk_rules":
-			findings, ok := out["findings"].([]types.Finding)
-			if !ok {
-				return LoopResult{}, fmt.Errorf("scan_risk_rules output findings type invalid")
+			decoded, err := tools.DecodeScanRulesOutput(out)
+			if err != nil {
+				return LoopResult{}, err
 			}
-			state.Findings = findings
+			state.Findings = decoded.Findings
 
 			addTrace(
 				"Summarize scan_risk_rules result",
 				"scan_risk_rules summary",
-				fmt.Sprintf("findings=%d", len(findings)),
+				fmt.Sprintf("findings=%d", len(state.Findings)),
 			)
 			state.HasScannedRules = true
 		case "format_report":

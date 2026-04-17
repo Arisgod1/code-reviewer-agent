@@ -1,6 +1,8 @@
 package agent
 
-func NextPlan(s *State) Plan {
+import "context"
+
+func RuleBasedNextPlan(s *State) Plan {
 	if s.Done {
 		return Plan{Finish: true, Thought: "Already finished"}
 	}
@@ -25,7 +27,7 @@ func NextPlan(s *State) Plan {
 			},
 		}
 	}
-	
+
 	if !s.HasFormatted {
 		return Plan{
 			Thought:  "Need to format final review report",
@@ -39,4 +41,19 @@ func NextPlan(s *State) Plan {
 		Finish:  true,
 		Thought: "Enough evidence collected; can finish",
 	}
+}
+func NextPlanWithFallback(ctx context.Context, s *State, llmPlanner *LLMPlanner) (Plan, string, string) {
+	if llmPlanner == nil {
+		return RuleBasedNextPlan(s), "fallback", "llm planner is nil"
+	}
+	if llmPlanner.Client == nil {
+		return RuleBasedNextPlan(s), "fallback", "llm client is nil"
+	}
+
+	p, err := llmPlanner.NextPlan(ctx, s)
+	if err != nil {
+		return RuleBasedNextPlan(s), "fallback", err.Error()
+	}
+
+	return p, "llm", ""
 }
