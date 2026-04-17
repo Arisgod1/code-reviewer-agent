@@ -25,7 +25,16 @@ func NextPlan(s *State) Plan {
 			},
 		}
 	}
-
+	
+	if !s.HasFormatted {
+		return Plan{
+			Thought:  "Need to format final review report",
+			ToolName: "format_report",
+			ToolInput: map[string]any{
+				"findings": s.Findings,
+			},
+		}
+	}
 	return Plan{
 		Finish:  true,
 		Thought: "Enough evidence collected; can finish",

@@ -10,7 +10,7 @@ import (
 )
 
 type LoopResult struct {
-	Findings  []types.Finding
+	Report    types.ReviewReport
 	Trace     []types.TraceStep
 	ToolCalls []types.ToolCall
 }
@@ -126,14 +126,26 @@ func RunReviewLoop(
 				fmt.Sprintf("findings=%d", len(findings)),
 			)
 			state.HasScannedRules = true
+		case "format_report":
+			r, ok := out["review_report"].(types.ReviewReport)
+			if !ok {
+				return LoopResult{}, fmt.Errorf("format_report output review_report type invalid")
+			}
+			state.Report = r
+			state.HasFormatted = true
+
+			addTrace(
+				"Summarize format_report result",
+				"format_report summary",
+				fmt.Sprintf("findings=%d", len(state.Report.Findings)),
+			)
 		default:
 			return LoopResult{}, fmt.Errorf("unknown tool in plan: %s", plan.ToolName)
 		}
 	}
 
-	finalFindings := state.Findings
 	return LoopResult{
-		Findings:  finalFindings,
+		Report:    state.Report,
 		Trace:     trace,
 		ToolCalls: toolCalls,
 	}, nil

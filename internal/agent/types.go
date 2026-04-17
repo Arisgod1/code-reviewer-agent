@@ -12,7 +12,9 @@ type State struct {
 	ParsedFiles []string
 	ParsedLines []tools.ChangedLine
 	Findings    []types.Finding
-
+	Report      types.ReviewReport
+	
+	HasFormatted    bool
 	HasParsedDiff   bool
 	HasScannedRules bool
 

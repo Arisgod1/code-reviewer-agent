@@ -30,6 +30,7 @@ func main() {
 			reg := tools.NewRegistry()
 			reg.Register(&tools.ParseDiffTool{})
 			reg.Register(&tools.ScanRulesTool{})
+			reg.Register(&tools.FormatReportTool{})
 
 			startAll := time.Now()
 			fmt.Println("== CodeReviewer-Agent ==")
@@ -38,24 +39,26 @@ func main() {
 
 			fmt.Println("next step: parse diff -> scan rules -> format report")
 
-			loopRes, err := agent.RunReviewLoop(ctx, reg, diffPath, language, 4)
+			loopRes, err := agent.RunReviewLoop(ctx, reg, diffPath, language, 6)
 			if err != nil {
 				return err
 			}
 
-			findings := loopRes.Findings
+			reviewReport := loopRes.Report
 			trace := loopRes.Trace
 			toolCalls := loopRes.ToolCalls
+			findings := reviewReport.Findings
 
 			fmt.Println("findings:", len(findings))
 			for i, f := range findings {
 				fmt.Printf("[%d] %s %s:%d severity=%s\n", i, f.ID, f.File, f.Line, f.Severity)
 			}
-			reviewReport := tools.BuildReport(findings)
 			reviewReport.Trace = trace
 			reviewReport.Metrics["total_cost_ms"] = time.Since(startAll).Milliseconds()
 			reviewReport.Metrics["trace_steps"] = len(trace)
 			reviewReport.Metrics["tool_timeout_ms"] = 2000
+			reviewReport.Metrics["tool_calls_count"] = len(toolCalls)
+			reviewReport.Metrics["tool_calls"] = toolCalls
 			if err := tools.WriteReportJSON(reviewReport, outputPath); err != nil {
 				return err
 			}
