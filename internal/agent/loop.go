@@ -112,6 +112,7 @@ func RunReviewLoop(
 				"parse_diff summary",
 				fmt.Sprintf("files=%d, changed_lines=%d", len(files), len(lines)),
 			)
+			state.HasParsedDiff = true
 		case "scan_risk_rules":
 			findings, ok := out["findings"].([]types.Finding)
 			if !ok {
@@ -124,12 +125,13 @@ func RunReviewLoop(
 				"scan_risk_rules summary",
 				fmt.Sprintf("findings=%d", len(findings)),
 			)
+			state.HasScannedRules = true
 		default:
 			return LoopResult{}, fmt.Errorf("unknown tool in plan: %s", plan.ToolName)
 		}
 	}
 
-	finalFindings, _ := state.Findings.([]types.Finding)
+	finalFindings := state.Findings
 	return LoopResult{
 		Findings:  finalFindings,
 		Trace:     trace,

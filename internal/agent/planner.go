@@ -5,8 +5,7 @@ func NextPlan(s *State) Plan {
 		return Plan{Finish: true, Thought: "Already finished"}
 	}
 
-	// 还没解析 diff
-	if s.ParsedLines == nil {
+	if !s.HasParsedDiff {
 		return Plan{
 			Thought:  "Need changed files and lines from diff",
 			ToolName: "parse_diff",
@@ -16,8 +15,7 @@ func NextPlan(s *State) Plan {
 		}
 	}
 
-	// 还没扫描规则
-	if s.Findings == nil {
+	if !s.HasScannedRules {
 		return Plan{
 			Thought:  "Need to scan risk rules over changed lines",
 			ToolName: "scan_risk_rules",

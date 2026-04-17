@@ -1,17 +1,26 @@
 package agent
 
+import (
+	"github.com/Arisgod1/code-reviewer-agent/internal/tools"
+	"github.com/Arisgod1/code-reviewer-agent/internal/types"
+)
+
 type State struct {
 	DiffPath string
 	Language string
 
 	ParsedFiles []string
-	ParsedLines any // 先用 any，后面再收紧类型
-	Findings    any
+	ParsedLines []tools.ChangedLine
+	Findings    []types.Finding
+
+	HasParsedDiff   bool
+	HasScannedRules bool
 
 	StepCount int
 	MaxSteps  int
 	Done      bool
 }
+
 type Plan struct {
 	Thought   string
 	ToolName  string
